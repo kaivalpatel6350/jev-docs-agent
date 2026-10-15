@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "docs-agent": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "/ABSOLUTE/PATH/TO/jev-docs-agent/projects:/app/projects",
+        "--env-file", "/ABSOLUTE/PATH/TO/jev-docs-agent/.env",
+        "-e", "HOST_PROJECTS_DIR=/ABSOLUTE/PATH/TO/jev-docs-agent/projects",
+        "jev-docs-agent"
+      ]
+    }
+  }
+}

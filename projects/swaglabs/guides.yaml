@@ -1,0 +1,86 @@
+# guides.yaml — swaglabs. Edit here or through Claude Desktop (MCP).
+# goal = what 'finished' looks like (Jev plans the clicks); hints = optional steps.
+# start_after: run after that video and reuse its session (e.g. stay signed in)
+
+app_url: "https://www.saucedemo.com"
+output_dir: out
+
+settings:
+  headless: true
+  slow_mo: 400
+  show_cursor: true
+  max_steps: 30
+  min_confidence: 0.3
+  done_threshold: 0.8
+  wait_poll_seconds: 5
+  max_wait_seconds: 120
+  max_images_per_doc: 40
+  coach_max_calls: 6
+  stall_seconds: 45
+  jev_model: "jev-1.13"
+
+never_improve: ["login"]
+forbid_labels: ["Sign Out", "Log Out", "Logout", "Reset App State", "Delete Account", "Pay Now", "Purchase"]
+
+test_data:
+  username: "${LOGIN_USERNAME}"
+  password: "${LOGIN_PASSWORD}"
+  first_name: "Jane"
+  last_name: "Tester"
+  postal_code: "E2L 4L1"
+
+videos:
+  - name: login
+    goal: "Signed in: the Products page (inventory list) is shown."
+    hints:
+      - "Type the username in 'Username'"
+      - "Type the password in 'Password'"
+      - "Click **Login**"
+    start_path: "/"
+
+  - name: sort-products
+    goal: "Products page has been sorted by each option in turn, ending on Price (high to low) with the most expensive item first."
+    hints:
+      - "Open the sort dropdown at top right of 'Products'"
+      - "Choose **Name (Z to A)**"
+      - "Choose **Price (low to high)**"
+      - "Choose **Price (high to low)**"
+    start_after: "login"
+    start_path: "/inventory.html"
+
+  - name: add-to-cart
+    goal: "Cart page shows the added product, then it is removed and the cart is empty."
+    hints:
+      - "Click **Add to cart** on 'Sauce Labs Backpack'"
+      - "Note the cart badge shows 1"
+      - "Click the cart icon at top right"
+      - "Click **Remove** on the backpack row"
+    start_after: "login"
+    start_path: "/inventory.html"
+
+  - name: checkout
+    goal: "Order confirmation page shows 'Thank you for your order!'."
+    hints:
+      - "Click **Add to cart** on 'Sauce Labs Backpack'"
+      - "Click the cart icon, then **Checkout**"
+      - "Fill First Name, Last Name, Zip/Postal Code from test data"
+      - "Click **Continue**"
+      - "Review the overview, then click **Finish**"
+    start_after: "login"
+    start_path: "/inventory.html"
+
+  - name: logout
+    goal: "Starting from the Products page, the user signs out through the menu and the login page with Username/Password fields is shown."
+    hints:
+      - "Click the menu (☰) button at top left"
+      - "Click **Logout**"
+    start_after: "login"
+    start_path: "/inventory.html"
+    allow: ["Logout"]
+
+docs:
+  - name: swag-labs-features
+    type: "how-to guide"
+    audience: "all users"
+    videos: ["login", "sort-products", "add-to-cart", "checkout", "logout"]
+

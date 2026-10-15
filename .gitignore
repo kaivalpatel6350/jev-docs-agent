@@ -1,0 +1,23 @@
+# secrets — never commit (templates named .env.example are kept)
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# generated per project (videos, screenshots, docs, exports, logs)
+projects/*/out/
+projects/*/*.bak
+projects/*/guides.yaml.before_*
+
+# python / tooling
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
+*.log
+*.tar.gz
+backups/

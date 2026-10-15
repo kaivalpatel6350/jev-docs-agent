@@ -1,0 +1,10 @@
+.venv
+__pycache__
+*.pyc
+.env
+**/.env
+projects
+backups
+out_rehearsal
+*.tar.gz
+.DS_Store
