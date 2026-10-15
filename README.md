@@ -14,7 +14,7 @@ walkthrough video, and turns the recordings into polished user documentation —
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
 [![Powered by Jev](https://img.shields.io/badge/Powered%20by-Jev%20(TypeSafe%20AI)-111111)](https://typesafe.ai)
 
-[Quick start](#-quick-start) · [Use cases](#-use-cases) · [How it works](#-how-it-works) · [Alternatives](#-how-it-compares) · [Claude Desktop](#-drive-it-from-claude-desktop-mcp) · [FAQ](#-faq)
+[Quick start](#-quick-start) · [Use cases](#-use-cases) · [How it works](#-how-it-works) · [Alternatives](#-how-it-compares) · [vs. demo platforms](docs/comparison.md) · [Claude Desktop](#-drive-it-from-claude-desktop-mcp) · [FAQ](#-faq)
 
 <br>
 
@@ -126,7 +126,7 @@ Jev answers in typed decisions, not prose. The 5-video example below estimated *
 Jev Docs Agent is an **open-source, self-hosted alternative** that sits between demo builders, documentation tools and
 test automation — it does a useful part of each, from one goal definition.
 
-| | **Jev Docs Agent** | Demo builders<br><sub>Supademo, Arcade, Storylane, Navattic</sub> | Guide/doc capture<br><sub>Scribe, Tango, Guidde</sub> | Scripted E2E testing<br><sub>Playwright, Cypress, Selenium</sub> | Manual testing |
+| | **Jev Docs Agent** | Interactive demo platforms<br><sub>Storylane, Navattic, Supademo, Arcade, HowdyGo, Consensus, Reprise, Demostack</sub> | Guide/doc capture<br><sub>Scribe, Tango, Guidde</sub> | Scripted E2E testing<br><sub>Playwright, Cypress, Selenium</sub> | Manual testing |
 |---|:---:|:---:|:---:|:---:|:---:|
 | Records itself (no human clicking) | ✅ | ❌ | ❌ | ✅ | ❌ |
 | Defined by a goal in plain English | ✅ | — | — | ❌ code + selectors | ✅ test steps |
@@ -139,11 +139,28 @@ test automation — it does a useful part of each, from one goal definition.
 | Self-hosted, open source, your data stays local | ✅ MIT | ❌ SaaS | ❌ SaaS | ✅ | ✅ |
 | Cost | API usage only (cents) | per-seat SaaS | per-seat SaaS | free + engineer time | tester time |
 
+### 🎞️ An open-source alternative to interactive demo platforms
+
+Demo platforms are built for go-to-market teams: a person captures the product, the platform turns it into an
+interactive tour or sandbox, and tracks how buyers engage. Jev Docs Agent automates the other half — **an AI agent
+captures every flow by itself and produces videos, guides and a pass/fail result, again on every release.**
+
+| Category | Platforms | Where Jev Docs Agent fits |
+|---|---|---|
+| **High-fidelity & full-funnel builders** | Storylane · Navattic · Supademo | ✅ Alternative for walkthrough *videos and guides* · 🤝 complement for interactive tours & ABM analytics |
+| **Lightweight & fast product tours** | Arcade · HowdyGo | ✅ Alternative for feature videos in help articles & announcements · 🤝 complement for embedded click-throughs |
+| **Enterprise & sales-engineering platforms** | Consensus · Reprise · Demostack | 🤝 Produces the feature videos and verifies flows · ❌ no sandboxes, app cloning or buyer intent |
+
+**→ Full breakdown: [Jev Docs Agent vs. interactive demo platforms](docs/comparison.md)** — feature matrix, platform-by-platform
+notes, a release workflow that uses both, and a decision guide.
+
 **Use it instead of…**
 
-- **Supademo / Arcade / Storylane** — when you need *videos and written guides* of real flows, regenerated on every
-  release, rather than hand-built interactive tours. Keep a demo builder if you need clickable, branching tours with
-  lead capture.
+- **Storylane / Supademo / Arcade / HowdyGo** — when the deliverable is *walkthrough videos and written guides* of real
+  flows, regenerated on every release, rather than hand-built interactive tours. Keep a demo platform for clickable,
+  branching tours, lead capture and buyer analytics.
+- **Navattic / Consensus / Reprise / Demostack** — not as a replacement: they own ABM, buyer intent and sandboxes. Use
+  the agent to produce the underlying videos and to flag which demos went stale after a release.
 - **Scribe / Tango** — when you want the capture done *for* you: nobody has to click through the app.
 - **Manual testing** — for repeatable happy-path checks and UAT evidence; keep humans for exploratory testing and
   judgment calls.
@@ -469,8 +486,8 @@ Please never commit `.env` files, real credentials or recordings of private apps
 ## 📄 License
 
 [MIT](LICENSE) © 2026 Kaival Patel. Jev and TypeSafe are trademarks of TypeSafe AI; Claude is a trademark of Anthropic;
-Supademo, Arcade, Storylane, Navattic, Scribe, Tango and Guidde are trademarks of their respective owners and are
-mentioned only for comparison. This project is not affiliated with any of them. Sauce Demo is a public demo site by
+Storylane, Navattic, Supademo, Arcade, HowdyGo, Consensus, Reprise, Demostack, Scribe, Tango and Guidde are trademarks
+of their respective owners and are mentioned only for comparison. This project is not affiliated with any of them. Sauce Demo is a public demo site by
 Sauce Labs.
 
 <div align="center">
@@ -478,7 +495,7 @@ Sauce Labs.
 
 **If this saves you a day of screenshots, give it a ⭐**
 
-<sub>`jev` · `typesafe-ai` · `system-one` · `ai-agent` · `browser-automation` · `playwright` · `mcp` · `claude-desktop` · `documentation-generator` · `walkthrough-videos` · `e2e-testing` · `no-code-testing` · `supademo-alternative` · `scribe-alternative` · `test-automation` · `open-source`</sub>
+<sub>`jev` · `typesafe-ai` · `system-one` · `ai-agent` · `browser-automation` · `playwright` · `mcp` · `claude-desktop` · `documentation-generator` · `walkthrough-videos` · `e2e-testing` · `no-code-testing` · `supademo-alternative` · `storylane-alternative` · `arcade-alternative` · `navattic-alternative` · `interactive-demo` · `scribe-alternative` · `test-automation` · `open-source`</sub>
 
 </div>
 
