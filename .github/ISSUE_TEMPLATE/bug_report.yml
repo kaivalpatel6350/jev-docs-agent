@@ -1,0 +1,52 @@
+name: 🐞 Bug report
+description: Something doesn't work as documented
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Never paste passwords, API keys, `.env` contents or screenshots of private data.**
+        Security issue? Use [private vulnerability reporting](https://github.com/kaivalpatel6350/jev-docs-agent/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Command or Claude Desktop prompt, plus the relevant `guides.yaml` video (goal/hints). A public demo app is ideal.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Run output
+      description: The video's status from `run_report.md` and the last log lines (redact anything private).
+      render: text
+  - type: dropdown
+    id: how
+    attributes:
+      label: How are you running it?
+      options:
+        - Claude Desktop (Docker)
+        - Claude Desktop (local Python)
+        - CLI (Docker)
+        - CLI (local Python)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: "git rev-parse --short HEAD"
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "macOS 15, Ubuntu 24.04, Windows 11..."

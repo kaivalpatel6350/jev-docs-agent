@@ -1,0 +1,65 @@
+name: ✨ Feature request
+description: Suggest a feature or improvement with a clear shape (rough ideas → Discussions › Ideas)
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Check the [roadmap](https://github.com/kaivalpatel6350/jev-docs-agent/blob/main/ROADMAP.md) and existing issues first — 👍 an existing one if it fits.
+        Still exploring? Start a [💡 Ideas discussion](https://github.com/kaivalpatel6350/jev-docs-agent/discussions/categories/ideas) instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+      placeholder: "I publish help-center videos, but they have no narration, so..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would it look like? Config, command, Claude Desktop prompt or output examples are great.
+      placeholder: |
+        settings:
+          narration: { provider: local, language: en }
+        python agent.py narrate --project x
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Recording / agent behaviour
+        - Voice-over & captions
+        - Docs, manuals & export
+        - Claude Desktop / MCP
+        - Test logins & credentials
+        - CI / testing workflows
+        - Docker & setup
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: use_case
+    attributes:
+      label: Main use case
+      options:
+        - Help center / user guides
+        - Product demos & marketing
+        - Onboarding & training
+        - QA / testing evidence
+        - Other
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other tools you use for this today.
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to work on this

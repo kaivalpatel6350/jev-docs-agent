@@ -96,6 +96,9 @@ assistants on top of human-captured demos.</sub>
 ✅ = core strength · ⚠️ = partial / via add-ons · ❌ = not offered. Based on public product information as of 2026;
 these products change quickly — check each vendor for current features.
 
+> 🗺️ **On the roadmap:** AI voice-over and captions, step-by-step manuals (v0.2) and a self-hosted interactive HTML tour
+> (v0.3) — see [ROADMAP.md](../ROADMAP.md).
+
 | | **Jev Docs Agent** | Storylane | Navattic | Supademo | Arcade | HowdyGo | Consensus | Reprise | Demostack |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | **Capture** | | | | | | | | | |

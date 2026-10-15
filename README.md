@@ -14,7 +14,7 @@ walkthrough video, and turns the recordings into polished user documentation —
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
 [![Powered by Jev](https://img.shields.io/badge/Powered%20by-Jev%20(TypeSafe%20AI)-111111)](https://typesafe.ai)
 
-[Quick start](#-quick-start) · [Use cases](#-use-cases) · [How it works](#-how-it-works) · [Alternatives](#-how-it-compares) · [vs. demo platforms](docs/comparison.md) · [Claude Desktop](#-drive-it-from-claude-desktop-mcp) · [FAQ](#-faq)
+[Quick start](#-quick-start) · [Use cases](#-use-cases) · [How it works](#-how-it-works) · [Alternatives](#-how-it-compares) · [vs. demo platforms](docs/comparison.md) · [Claude Desktop](#-drive-it-from-claude-desktop-mcp) · [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md)
 
 <br>
 
@@ -467,21 +467,27 @@ per video, with credentials from `-e` variables. Fail the build by checking each
 
 ## 🗺️ Roadmap
 
-- [ ] Login-free continuation: record one session and cut per-task clips
-- [ ] GitHub Action + JUnit report for CI
-- [ ] Narrated videos (text-to-speech over each step)
-- [ ] Auto-detect UI changes between runs and flag outdated docs
-- [ ] More export targets (Confluence, Notion, Docusaurus)
+| Next | Theme | Highlights |
+|---|---|---|
+| **v0.2** | 🎙️ Narrated & annotated | AI **voice-over** synced to each step · **captions** (SRT/VTT) · **step-by-step manuals** (DOCX/PDF) with highlighted screenshots · QA **test-case** format |
+| **v0.3** | 🚀 Share & verify | Self-hosted **interactive HTML tour** · trim login & idle time · **GitHub Action** + JUnit · visual change detection · multi-language |
+| Later | 🔭 | Confluence / Notion / Docusaurus export · explore mode · test-case import · TOTP/MFA · mobile viewports · branding |
 
-Ideas and PRs welcome — open an issue to discuss.
+**→ Full plan with designs, status and effort: [ROADMAP.md](ROADMAP.md)**
+
+> ### 💡 Have an idea?
+> This project is shaped by its users. **[Share it in Ideas](https://github.com/kaivalpatel6350/jev-docs-agent/discussions/categories/ideas)**,
+> 👍 the [issues](https://github.com/kaivalpatel6350/jev-docs-agent/issues?q=is%3Aopen+label%3Aroadmap) you want most —
+> priorities follow demand.
 
 ## 🤝 Contributing
 
-1. Fork and create a branch.
-2. Add a project under `projects/` against a public demo app to reproduce your change.
-3. Run `python agent.py plan --project <name>` and a recording, then open a PR with the result.
+Contributions of every size are welcome — ideas, bug reports, example projects against public demo apps, docs and code.
 
-Please never commit `.env` files, real credentials or recordings of private apps.
+- 🌱 New here? Try a [good first issue](https://github.com/kaivalpatel6350/jev-docs-agent/issues?q=is%3Aopen+label%3A%22good+first+issue%22).
+- 📖 Read **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup, testing and the PR checklist.
+- 🔐 Never commit `.env` files, real credentials or recordings of private apps.
+- 🤗 Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## 📄 License
 
