@@ -126,6 +126,41 @@ FIND_POPUP = r"""() => {
 
 # Tags every interactive element with an id, plus the context Jev needs to tell
 # "Edit (Billing address)" from "Edit (Shipping address)" or one table row's "View" button from another's.
+# Is an element really on screen? Inside the window AND not clipped away by a scrolled ancestor
+# (e.g. a card 2,000px down an overflow:auto list is "visible" to offsetWidth but not to a person).
+IN_VIEW_JS = r"""(e => { let r = e.getBoundingClientRect(); if (!r.width && !r.height) return false;
+    let t = Math.max(r.top, 0), b = Math.min(r.bottom, innerHeight), l = Math.max(r.left, 0), rt = Math.min(r.right, innerWidth);
+    for (let n = e.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const s = getComputedStyle(n); if (!/(auto|scroll|hidden|clip)/.test(s.overflow + s.overflowX + s.overflowY)) continue;
+      const c = n.getBoundingClientRect(); t = Math.max(t, c.top); b = Math.min(b, c.bottom); l = Math.max(l, c.left); rt = Math.min(rt, c.right); }
+    return b - t > 2 && rt - l > 2; })"""
+
+# Scrollable areas a person could scroll: the page itself and any visible overflow:auto/scroll panel big enough
+# to matter (lists, side panels, modal bodies). Each gets data-jev-scroll so the agent can scroll it later.
+SCROLLERS_JS = r"""(onlyIn) => {
+  const name = n => { const h = n.querySelector('h1,h2,h3,h4,legend,[role=heading]') ||
+      (n.parentElement && n.parentElement.querySelector('h1,h2,h3,h4,[role=heading]'));
+    const t = (n.getAttribute('aria-label') || (h && h.innerText) || n.innerText || '').trim().replace(/\s+/g, ' ');
+    return t.slice(0, 50); };
+  document.querySelectorAll('[data-jev-scroll]').forEach(e => e.removeAttribute('data-jev-scroll'));
+  const out = []; const root = document.scrollingElement || document.documentElement;
+  if (!onlyIn && root.scrollHeight > innerHeight + 40)
+    out.push({ id: 'page', name: 'the page', up: root.scrollTop > 5,
+               down: root.scrollTop + innerHeight < root.scrollHeight - 5, area: innerWidth * innerHeight });
+  for (const n of (onlyIn || document.body).querySelectorAll('*')) {
+    if (n.scrollHeight <= n.clientHeight + 40 || n.clientHeight < 120 || n.clientWidth < 150) continue;
+    const s = getComputedStyle(n); if (!/(auto|scroll)/.test(s.overflowY)) continue;
+    const r = n.getBoundingClientRect();
+    const vh = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0), vw = Math.min(r.right, innerWidth) - Math.max(r.left, 0);
+    if (vh < 100 || vw < 120 || s.visibility === 'hidden') continue;
+    out.push({ el: n, name: name(n), up: n.scrollTop > 5, down: n.scrollTop + n.clientHeight < n.scrollHeight - 5, area: vh * vw });
+  }
+  // nested scrollers: keep the biggest few; drop ones that are fully inside a bigger listed one with the same name
+  out.sort((a, b) => b.area - a.area);
+  return out.slice(0, 5).map((o, i) => { const id = o.id || 'sc' + i; if (o.el) o.el.setAttribute('data-jev-scroll', id);
+    return { id, name: o.name || 'a scrollable panel', up: o.up, down: o.down }; });
+}"""
+
 COLLECT_JS = r"""() => {
   const q = 'a,button,input,select,textarea,[contenteditable=true],[role=button],[role=link],[role=tab],[role=checkbox],[role=switch],[role=option],[role=menuitem]';
   const visible = e => e.type === 'file' || !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
@@ -135,22 +170,41 @@ COLLECT_JS = r"""() => {
   // While a popup is open, elements behind it can't really be clicked — list only what is inside the popup.
   const pop = (""" + FIND_POPUP + r""")();
   const all = [...document.querySelectorAll(q)].filter(e => visible(e) && !e.disabled);
-  const inPop = pop ? all.filter(e => pop.contains(e)) : [];
+  // Dropdowns/menus opened from inside a popup are often rendered elsewhere in the DOM (portals). They sit on
+  // top of the popup, so count anything that is the topmost thing at its own centre as usable too.
+  const onTop = e => { const r = e.getBoundingClientRect(); if (!r.width || !r.height) return false;
+    const x = Math.min(Math.max(r.left + r.width / 2, 0), innerWidth - 1), y = Math.min(Math.max(r.top + r.height / 2, 0), innerHeight - 1);
+    const h = document.elementFromPoint(x, y); return !!h && (h === e || e.contains(h) || h.contains(e)); };
+  const inPop = pop ? all.filter(e => pop.contains(e) || onTop(e)) : [];
   document.querySelectorAll('[data-jev-id]').forEach(e => e.removeAttribute('data-jev-id'));
-  return (inPop.length ? inPop : all).slice(0, 240).map((e, i) => {
+  // Rank what is on screen first, then the nearest off-screen elements. Plain DOM order with a cap of 240 dropped
+  // everything at the bottom of long pages/lists (export buttons, "Show N records", the last cards).
+  const inView = """ + IN_VIEW_JS + r""";
+  const ranked = (inPop.length ? inPop : all).map((e, k) => { const r = e.getBoundingClientRect(), v = inView(e);
+    const dist = v ? 0 : (r.top > innerHeight ? r.top - innerHeight : r.bottom < 0 ? -r.bottom : 1);
+    return { e, k, v, where: v ? '' : (r.top >= innerHeight - 2 ? 'below' : r.bottom <= 2 ? 'above' : 'hidden in a scrolled panel'), dist }; });
+  ranked.sort((a, b) => (a.v === b.v ? 0 : a.v ? -1 : 1) || a.dist - b.dist || a.k - b.k);
+  // Off screen, repeated buttons ("Edit", "Remove", "p.2" on every card) crowd out the one-off ones a goal needs
+  // ("Export PDF" at the bottom of a list): keep at most 2 off-screen and 12 on-screen copies of the same label.
+  const seenLbl = {}, keyOf = e => (e.getAttribute('aria-label') || e.innerText || e.value || e.placeholder || '').trim().slice(0, 40);
+  const kept = ranked.filter(x => { const k = (x.v ? 'v:' : 'o:') + keyOf(x.e); seenLbl[k] = (seenLbl[k] || 0) + 1; return seenLbl[k] <= (x.v ? 12 : 2); });
+  return kept.slice(0, 240).sort((a, b) => a.k - b.k).map(({ e, where }, i) => {
     e.setAttribute('data-jev-id', 'el' + i);
     const own = l => [...l.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').trim() || l.innerText;
     const label = (e.labels && e.labels[0] && own(e.labels[0])) || e.getAttribute('aria-label') || e.title ||
                   e.innerText || e.placeholder || e.name || (['submit', 'button'].includes(e.type) ? e.value : '') || '';
     const row = e.closest('tr,li,[role=row]');
+    // neighbouring buttons only (tells "Copy | [Word] | Regenerate" in a footer from each card's own "Word")
+    const sib = n => n && n.matches && n.matches('button,a,[role=button]') && n.innerText ? n.innerText.trim().replace(/\s+/g, ' ').slice(0, 25) : '';
+    const beside = [sib(e.previousElementSibling), sib(e.nextElementSibling)].filter(Boolean).join(' | ');
     const near = e.parentElement ? [...e.parentElement.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').trim().slice(0, 40) : '';
     return { id: 'el' + i, tag: e.tagName.toLowerCase(), type: e.isContentEditable ? 'editor' : (e.type || e.getAttribute('role') || ''),
-             label: label.trim().replace(/\s+/g, ' ').slice(0, 80), section: section(e),
+             label: label.trim().replace(/\s+/g, ' ').slice(0, 80), section: section(e), beside,
              near, row: row ? row.innerText.trim().replace(/\s+/g, ' ').slice(0, 70) : '',
              checked: ('checked' in e && ['checkbox', 'radio'].includes(e.type)) ? e.checked : null,
              filled: e.isContentEditable ? !!e.innerText.trim() : (typeof e.value === 'string' ? !!e.value : null),
              text: (typeof e.value === 'string' && e.type !== 'password' && e.tagName !== 'BUTTON') ? e.value.trim().slice(0, 60) : '',
-             options: e.tagName === 'SELECT' ? [...e.options].map(o => o.text.trim()).slice(0, 25) : null };
+             options: e.tagName === 'SELECT' ? [...e.options].map(o => o.text.trim()).slice(0, 25) : null, where };
   });
 }"""
 
@@ -158,7 +212,14 @@ COLLECT_JS = r"""() => {
 VIEW_JS = r"""() => {
   const clean = s => (s || '').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
   const d = (""" + FIND_POPUP + r""")();
-  return { popup: d ? clean(d.innerText) : '', text: clean(document.body.innerText) };
+  const inView = """ + IN_VIEW_JS + r""";
+  const seen = new Set(), parts = [];
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n && parts.join(' ').length < 4000; n = w.nextNode()) {
+    const p = n.parentElement, t = n.textContent.trim(); if (!p || !t || seen.has(p)) continue;
+    const st = getComputedStyle(p); if (st.visibility === 'hidden' || st.display === 'none') continue;
+    if (inView(p)) { seen.add(p); parts.push(p.innerText && p.childElementCount === 0 ? p.innerText.trim() : t); } }
+  return { popup: d ? clean(d.innerText) : '', text: clean(document.body.innerText), screen: clean(parts.join('\n')) };
 }"""
 
 
@@ -202,11 +263,40 @@ def point_at(page, loc):
     """Glide the visible pointer to the element so viewers can follow each step."""
     if not S.get("show_cursor", True): return
     try:
-        loc.scroll_into_view_if_needed(timeout=3000)
+        smooth_into_view(page, loc)
         b = loc.bounding_box()
         if b and b["width"] and b["height"]:  # hidden inputs (e.g. file pickers) have no box
             page.mouse.move(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2, steps=S.get("cursor_steps", 12))
     except Exception: pass
+
+
+def smooth_into_view(page, loc):
+    """Bring an element on screen with a smooth scroll a viewer can follow (instant jumps look like cuts).
+    Handles elements clipped inside scrolled panels, not just below the window."""
+    try:
+        moved = loc.evaluate("e => { const inView = " + IN_VIEW_JS + "; if (inView(e)) return false;"
+                             " e.scrollIntoView({behavior: 'smooth', block: 'center', inline: 'nearest'}); return true; }")
+        if moved: page.wait_for_timeout(S.get("scroll_pause_ms", 900))
+        loc.scroll_into_view_if_needed(timeout=2000)  # safety net if smooth scrolling was cut short
+    except Exception: pass
+
+
+def scroll_area(page, sid, down):
+    """Scroll the page or a panel by ~80% of its height, smoothly, with the pointer over it. Returns True if it moved."""
+    sel = None if sid == "page" else f'[data-jev-scroll="{sid}"]'
+    js = """([sel, down]) => { const n = sel ? document.querySelector(sel) : (document.scrollingElement || document.documentElement);
+        if (!n) return null; const r = sel ? n.getBoundingClientRect() : {left: 0, top: 0, width: innerWidth, height: innerHeight};
+        const before = n.scrollTop, h = sel ? n.clientHeight : innerHeight;
+        (sel ? n : window).scrollBy({top: (down ? 1 : -1) * Math.round(h * 0.8), behavior: 'smooth'});
+        return {before, x: r.left + r.width / 2, y: r.top + Math.min(r.height, innerHeight) / 2}; }"""
+    info = page.evaluate(js, [sel, down])
+    if not info: return False
+    if S.get("show_cursor", True):
+        try: page.mouse.move(info["x"], max(10, info["y"]), steps=S.get("cursor_steps", 12))
+        except Exception: pass
+    page.wait_for_timeout(S.get("scroll_pause_ms", 900))
+    after = page.evaluate("sel => { const n = sel ? document.querySelector(sel) : (document.scrollingElement || document.documentElement); return n ? n.scrollTop : null; }", sel)
+    return after is not None and abs(after - info["before"]) > 2
 
 
 def test_data():
@@ -222,15 +312,23 @@ def describe(el):
     if el["section"]: d += f' · section "{el["section"]}"'
     if el.get("near") and el["near"] != el["label"]: d += f' · next to "{el["near"]}"'
     if el["row"] and el["row"] != el["label"]: d += f' · row "{el["row"]}"'
+    if el.get("beside"): d += f' · next to buttons "{el["beside"]}"'
     if el["checked"] is not None: d += " (checked)" if el["checked"] else " (unchecked)"
+    if el.get("where"): d += " · off screen (" + el["where"] + "; using it scrolls it into view)"
     if is_text_field(el):
         d += f' (has text "{el["text"]}")' if el.get("text") else (" (has text)" if el["filled"] else " (empty)")
     return d
 
 
-def build_targets(els, forbid):
-    """Every clickable thing becomes one Jev choice; each <select> option becomes its own choice."""
+def build_targets(els, forbid, scrollers=()):
+    """Every clickable thing becomes one Jev choice; each <select> option becomes its own choice.
+    Scrollable areas (the page, lists, side panels, modal bodies) become 'scroll' choices, listed first so the
+    choice cap never drops them — content further down a long list can only be reached by scrolling."""
     t = {}
+    for sc in scrollers:
+        where = "the page" if sc["id"] == "page" else f'the "{sc["name"]}" panel'
+        if sc["down"]: t[f'scroll:{sc["id"]}:down'] = f"Scroll down in {where} to see more of it (more content below)"
+        if sc["up"]: t[f'scroll:{sc["id"]}:up'] = f"Scroll up in {where} (content above)"
     for e in els:
         if any(f in e["label"].lower() for f in forbid):
             continue
@@ -285,13 +383,18 @@ def jev_decide(state, targets, values):
     stages["other"] = "None of the expected steps fits what is on screen"
     a = _jev.system_one(model=S.get("jev_model", "jev-latest"), state=state, questions={
         "done": Noul(instructions="Is the goal fully completed right now? Check the goal's finish condition against "
-                                  "the popup and page_text on screen, not against steps_taken alone."),
+                                  "the popup, screen_text (what is on screen now), new_text (what just appeared) "
+                                  "and page_text, not against "
+                                  "steps_taken alone."),
         "stage": Choice(instructions="Which expected step should be worked on now, judging by the screen and steps_taken?",
                         criteria=stages),
         "last_step": Choice(instructions="Look at the last entry of steps_taken and the screen now. How did that step go?",
                             criteria=LAST_STEP),
         "target": Choice(instructions="Which element should be used next to carry out the current expected step? "
-                                      "If a popup is open, only its elements are listed. Follow notes and coach_tip "
+                                      "If a popup is open, only its elements are listed. Elements marked 'off screen' "
+                                      "can be used directly (they are scrolled into view). If what you need is not "
+                                      "listed, it is probably further down a long page or list: choose a 'Scroll "
+                                      "down' choice for that panel. Follow notes and coach_tip "
                                       "when present. Avoid elements marked 'did nothing'.", criteria=targets),
         "value": Choice(instructions="If the next element is a text field, which value should be typed into it?",
                         criteria=values),
@@ -318,7 +421,8 @@ def coach(page, state, targets, values, forbid):
         f"NOTES:\n{lines(state.get('notes', []))}\n\nELEMENTS IT CAN USE NOW:\n{lines(list(targets.values())[:150])}\n\n"
         f"VALUES IT CAN TYPE (it cannot type anything else):\n{lines(v for k, v in values.items() if k != 'none')}\n\n"
         "Reply with ONE instruction of at most two sentences that names the exact element (and the value to type, "
-        "if any). If the text it must type is not in the list, put it on a last line as  TYPE: <exact text>  "
+        "if any). If the element it needs is not on screen, tell it which panel to scroll and which way. "
+        "If the text it must type is not in the list, put it on a last line as  TYPE: <exact text>  "
         "(demo data only, never passwords). If the goal's finish condition is already met on screen, reply exactly DONE. "
         f"Never suggest: {', '.join(forbid)}.")
     return _coach([{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": shot}},
@@ -326,6 +430,52 @@ def coach(page, state, targets, values, forbid):
 
 
 DECIDE = jev_decide  # swap in a stand-in (same signature) for offline tests
+
+
+# ---------- live session (apps that sign out on every full page load) ----------
+# Some apps (e.g. HIPAA tools) drop the sign-in on any reload or new page, so restoring cookies/localStorage
+# cannot start a dependent video signed in. With settings.live_session: true, a chain of videos (start_after)
+# runs in ONE browser page: each next video moves there with in-app navigation, and the page's single
+# recording is cut into one video.webm per video when the run ends.
+LIVE = {}
+
+def spa_goto(page, url):
+    """Navigate without reloading: Next.js / React Router / history API, else a link click, else a real load."""
+    rest = url.split("://", 1)[-1] if "://" in url else url
+    path = rest.split("/", 1)[1] if ("://" in url and "/" in rest) else ("" if "://" in url else url)
+    path = "/" + path.lstrip("/")
+    if page.url.split("#")[0].rstrip("/").endswith(path.rstrip("/")): return
+    ok = page.evaluate("""p => { try {
+        if (window.next && window.next.router && window.next.router.push) { window.next.router.push(p); return true; }
+        const a = [...document.querySelectorAll('a[href]')].find(a => new URL(a.href, location.href).pathname === p);
+        if (a) { a.click(); return true; }
+        history.pushState({}, '', p); dispatchEvent(new PopStateEvent('popstate', {state: {}})); return 'pushed';
+      } catch (e) { return false; } }""", path)
+    page.wait_for_timeout(1500); settle(page)
+    if not ok or not page.url.split("?")[0].rstrip("/").endswith(path.split("?")[0].rstrip("/")):
+        page.goto(url); settle(page)
+
+
+def finish_live():
+    """Close the shared page and cut its recording into each video's folder."""
+    if not LIVE: return
+    page, ctx, browser, segs = LIVE["page"], LIVE["ctx"], LIVE["browser"], LIVE["segments"]
+    LIVE.clear()
+    try:
+        vid = page.video.path() if page.video else None
+        ctx.close(); browser.close()
+    except Exception: vid = None
+    if not vid or not Path(vid).exists(): return
+    for out, a, b in segs:
+        dst = out / "video.webm"
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{max(0, a - 0.3):.2f}", "-to", f"{b + 0.5:.2f}", "-i", str(vid),
+               "-c:v", "libvpx", "-b:v", "2M", "-deadline", "realtime", "-cpu-used", "8", "-an", str(dst)]
+        try:
+            import subprocess
+            if subprocess.run(cmd).returncode != 0 or not dst.exists(): shutil.copy(vid, dst)
+        except Exception: shutil.copy(vid, dst)
+    try: shutil.copy(vid, segs[-1][0].parent / f"_session_{int(time.time())}.webm"); Path(vid).unlink()
+    except Exception: pass
 
 
 # ---------- VIDEO AGENT ----------
@@ -346,18 +496,38 @@ def record_video(p, v, app_url=None):
         last = json.loads(f.read_text()).get("last_screen", {}).get("url", "") if f.exists() else ""
         if last.startswith(app_url.rstrip("/")): start = last
 
-    browser = p.chromium.launch(headless=S.get("headless", False), slow_mo=S.get("slow_mo", 400))
-    ctx = browser.new_context(
-        viewport={"width": 1280, "height": 800}, accept_downloads=True,
-        record_video_dir=str(out), record_video_size={"width": 1280, "height": 800},
-        storage_state=str(state_file) if state_file and state_file.exists() else None)
-    if S.get("show_cursor", True): ctx.add_init_script(CURSOR_JS)
-    page = ctx.new_page()
-    page.on("dialog", lambda d: d.accept())
-    page.on("download", lambda d: d.save_as(out / "downloads" / d.suggested_filename))
-    page.goto(start)
-    settle(page)
-    page.screenshot(path=out / "step_1.png")
+    live = S.get("live_session", False)
+    reuse = live and LIVE and prev in LIVE.get("names", ())
+    if live and not reuse: finish_live()
+    if reuse:
+        browser, ctx, page = LIVE["browser"], LIVE["ctx"], LIVE["page"]
+        LIVE["dl"]["dir"] = out / "downloads"
+        seg_start = time.time() - LIVE["t0"]
+        spa_goto(page, start)
+        page.screenshot(path=out / "step_1.png")
+    else:
+      browser = p.chromium.launch(headless=S.get("headless", False), slow_mo=S.get("slow_mo", 400))
+      ctx = browser.new_context(
+          viewport={"width": 1280, "height": 800}, accept_downloads=True,
+          record_video_dir=str(out), record_video_size={"width": 1280, "height": 800},
+          storage_state=str(state_file) if state_file and state_file.exists() else None)
+      if S.get("show_cursor", True): ctx.add_init_script(CURSOR_JS)
+      # Many apps keep the sign-in in sessionStorage, which Playwright's storage_state does not save — dependent
+      # videos then opened on the login form. Restore it (per origin) before the app's own scripts run.
+      ss_file = OUT / "videos" / prev / "session_storage.json" if prev else None
+      if ss_file and ss_file.exists():
+          ctx.add_init_script("(() => { const all = " + ss_file.read_text() + "; const kv = all[location.origin];"
+                              " if (!kv) return; try { for (const [k, v] of kv) if (sessionStorage.getItem(k) === null)"
+                              " sessionStorage.setItem(k, v); } catch (e) {} })()")
+      page = ctx.new_page()
+      page.on("dialog", lambda d: d.accept())
+      dl = {"dir": out / "downloads"}  # live session: the next video points this at its own folder
+      page.on("download", lambda d: d.save_as(dl["dir"] / d.suggested_filename))
+      page.goto(start)
+      settle(page)
+      page.screenshot(path=out / "step_1.png")
+      seg_start = 0.0
+      if live: LIVE.update(browser=browser, ctx=ctx, page=page, t0=time.time(), names=[], segments=[], dl=dl)
     steps, history, log = [{"shot": "step_1.png", "action": "Open the app"}], [], []
     waited, status = 0, "max_steps"
     state, targets = {}, {}
@@ -368,7 +538,7 @@ def record_video(p, v, app_url=None):
     # Actions that changed nothing or went the wrong way are marked, so Jev avoids them. When Jev is stuck
     # (unsure, repeating, failing twice, retrying a failed element, or waiting on a frozen screen) the coach
     # looks at a screenshot and gives one concrete instruction; Jev then carries on by itself.
-    notes, tip, tried = [], "", {}           # tried: element description -> what happened when it was used
+    notes, tip, tried, prev_text = [], "", {}, ""           # tried: element description -> what happened when it was used
     bad_streak, last_view, still_since = 0, "", 0
     coach_max = S.get("coach_max_calls", 6) if DECIDE is jev_decide else 0   # no coach in offline rehearsal
     coach_log, coached, stall_asked = [], False, False
@@ -377,13 +547,22 @@ def record_video(p, v, app_url=None):
     for _ in range(v.get("max_steps", S.get("max_steps", 30)) + coach_max):  # coach turns don't eat the budget
         settle(page, 3000)
         els = page.evaluate(COLLECT_JS)
-        targets = build_targets(els, forbid)
+        scrollers = page.evaluate("() => { const pop = (" + FIND_POPUP + ")(); return (" + SCROLLERS_JS + ")(pop); }") \
+            if S.get("scroll_actions", True) else []
+        targets = build_targets(els, forbid, scrollers)
         for k, desc in targets.items():  # show Jev what already failed
             if desc in tried: targets[k] = f"{desc} — tried before: {tried[desc]}"
         view = page.evaluate(VIEW_JS)
+        prev_lines = set(prev_text.split("\n")) if prev_text else set(view["text"].split("\n"))
         state = {"goal": v["goal"], "expected_steps": v.get("hints", []), "steps_taken": history[-25:],
                  "notes": notes[-8:], "coach_tip": tip, "url": page.url,
-                 "popup": view["popup"][:1500], "page_text": view["text"][:3500]}
+                 "downloads": [f.name for f in (out / "downloads").iterdir()],
+                 "popup": view["popup"][:1500], "screen_text": view.get("screen", "")[:3000],
+                 # lines that appeared since the last step, wherever they are on the page — page_text is cut at
+                 # 3,500 chars from the top, so a result shown lower on a long page was invisible to the done check
+                 "new_text": "\n".join(l for l in view["text"].split("\n") if l.strip() and l not in prev_lines)[:1200],
+                 "page_text": view["text"][:3500]}
+        prev_text = view["text"]
         d = DECIDE(state, targets, values)
         log.append({"step": len(steps), "done": round(d["done"], 3), "target": d["target"],
                     "target_desc": targets.get(d["target"], ""), "confidence": round(d["confidence"], 3),
@@ -393,9 +572,12 @@ def record_video(p, v, app_url=None):
         # 1. did the last action work? (Jev's judgement — catches clicks that "worked" but did the wrong thing)
         if d.get("last_step") in ("nothing", "wrong") and len(steps) > 1 and d.get("last_conf", 0) >= 0.5:
             verdict = "did nothing useful" if d["last_step"] == "nothing" else "went the wrong way"
-            if not history[-1].endswith(")"): history[-1] += f"  ({verdict})"
-            tried.setdefault(steps[-1]["desc"], verdict)
-            bad_streak += 1
+            if steps[-1].get("scroll") and not history[-1].endswith(")"):
+                pass  # a scroll that moved only revealed more of the list; judging it "useless" would stop Jev scrolling
+            else:
+                if not history[-1].endswith(")"): history[-1] += f"  ({verdict})"
+                tried.setdefault(steps[-1]["desc"], verdict)
+                bad_streak += 1
         elif d.get("last_step") == "worked":
             bad_streak = 0
 
@@ -413,7 +595,8 @@ def record_video(p, v, app_url=None):
         if view["text"] != last_view: last_view, still_since = view["text"], waited
         pick = "" if waiting else targets.get(d["target"], "").split(" — tried before: ")[0]
         stuck = ("unsure" if d["confidence"] < min_conf else
-                 "repeating" if pick and len(steps) > 2 and steps[-1].get("desc") == steps[-2].get("desc") == pick else
+                 "repeating" if pick and not d["target"].startswith("scroll:") and len(steps) > 2
+                                and steps[-1].get("desc") == steps[-2].get("desc") == pick else
                  "failing" if bad_streak >= 2 else
                  "retrying a failed element" if " — tried before: " in targets.get(d["target"], "") else
                  "waiting, screen unchanged" if waiting and not stall_asked
@@ -447,6 +630,21 @@ def record_video(p, v, app_url=None):
             if waited >= max_wait: status = "timeout"; break
             time.sleep(poll); waited += poll; continue
 
+        if d["target"].startswith("scroll:"):
+            _, sid, way = d["target"].split(":")
+            desc = targets[d["target"]].split(" — tried before: ")[0]
+            moved = scroll_area(page, sid, way == "down")
+            name = next((sc["name"] for sc in scrollers if sc["id"] == sid), "the page")
+            action = f'Scroll {way}' + ("" if sid == "page" else f' in "{name}"')
+            note = "" if moved else "  (it did not move: already at the end)"
+            if not moved: tried[desc] = "did not move (already at the end)"; bad_streak += 1
+            history.append(action + note)
+            shot = f"step_{len(steps) + 1}.png"
+            page.screenshot(path=out / shot)
+            steps.append({"shot": shot, "action": action, "desc": desc, "scroll": True})
+            print(f"    ↕ {action}{note}")
+            continue
+
         eid, _, opt = d["target"].partition(":")
         el = next(e for e in els if e["id"] == eid)
         desc = targets[d["target"]].split(" — tried before: ")[0]
@@ -456,6 +654,7 @@ def record_video(p, v, app_url=None):
             continue
         name = el["label"] or el["section"] or el["type"]
         before = view["text"]
+        dl_before = {f.name for f in (out / "downloads").iterdir()}
         try:
             if el["type"] == "file":
                 loc.set_input_files(CFG["upload_file"])
@@ -465,6 +664,11 @@ def record_video(p, v, app_url=None):
                 action = f'Choose "{el["options"][int(opt)]}" in "{name}"'
             elif is_text_field(el) and d["value"] != "none":
                 key = d["value"]
+                pw_keys = [k for k in data if "pass" in k]
+                if el["type"] == "password" and "pass" not in key and pw_keys:
+                    key = pw_keys[0]   # never type a username/other value into a password box
+                elif el["type"] != "password" and "pass" in key and el["type"] in ("email", "text", ""):
+                    key = next((k for k in data if k in ("username", "email", "user")), key)  # nor the password into a visible field
                 loc.fill(data.get(key, ""), timeout=10000)
                 secret = "${" in str(CFG.get("test_data", {}).get(key, ""))  # values from .env never go in logs
                 # name the value that was typed (never the value itself) so a wrong pick shows up in the log
@@ -482,7 +686,11 @@ def record_video(p, v, app_url=None):
             continue
         settle(page)
         page.wait_for_timeout(700)  # popups/animations often draw just after the network settles
-        note = "  (nothing changed on screen)" if not is_text_field(el) and page.evaluate(VIEW_JS)["text"] == before else ""
+        page.wait_for_timeout(300)
+        new_dl = sorted({f.name for f in (out / "downloads").iterdir()} - dl_before)
+        # A download (export, report) changes nothing on screen but it DID work — say so, or Jev clicks it again.
+        note = f"  (downloaded {', '.join(new_dl)})" if new_dl else (
+               "  (nothing changed on screen)" if not is_text_field(el) and page.evaluate(VIEW_JS)["text"] == before else "")
         history.append(action + note)
         shot = f"step_{len(steps) + 1}.png"
         page.screenshot(path=out / shot)
@@ -498,10 +706,24 @@ def record_video(p, v, app_url=None):
         if tip.upper().startswith("DONE"): status = "done"
 
     page.screenshot(path=out / "final.png")
-    ctx.storage_state(path=out / "session.json")  # lets later videos start signed in
-    vid = page.video.path()
-    ctx.close(); browser.close()
-    Path(vid).replace(out / "video.webm")
+    if live:  # keep the page open for the next video in the chain; its clip is cut in finish_live()
+        LIVE["names"].append(v["name"]); LIVE["segments"].append((out, seg_start, time.time() - LIVE["t0"]))
+        try: ctx.storage_state(path=out / "session.json")
+        except Exception: pass
+        vid = None
+    else:
+      try: ctx.storage_state(path=out / "session.json", indexed_db=True)  # lets later videos start signed in
+      except TypeError: ctx.storage_state(path=out / "session.json")       # older Playwright: no IndexedDB
+      try:  # sessionStorage of every open origin (see the restore above)
+          ss = {}
+          for pg in ctx.pages:
+              o = pg.evaluate("() => location.origin")
+              if o and o != "null": ss[o] = pg.evaluate("() => Object.entries(sessionStorage)")
+          (out / "session_storage.json").write_text(json.dumps(ss))
+      except Exception: pass
+      vid = page.video.path()
+      ctx.close(); browser.close()
+      Path(vid).replace(out / "video.webm")
     downloads = [f.name for f in (out / "downloads").iterdir()]
     result = {"name": v["name"], "goal": v["goal"], "status": status, "steps": steps, "profile": PROFILE,
               "waited_seconds": waited, "downloads": downloads, "decisions": log, "coach": coach_log,
@@ -522,6 +744,7 @@ def run_videos(only=None, app_url=None):
         for v in vids:
             print(f"🎥 {v['name']}")
             results.append(record_video(p, v, app_url))
+        finish_live()
     write_report()
     return results
 
@@ -814,6 +1037,7 @@ def improve(only=None, rounds=3):
                 print(f"  ✎ {v['name']} ({rec['status']}): {fix.get('diagnosis', '')}")
                 print(f"🎥 {v['name']}")
                 new = record_video(p, v)
+                finish_live()
                 write_report()
                 log += [f"### {v['name']}: {rec['status']} → {new['status']}", f"Diagnosis: {fix.get('diagnosis', '')}", "",
                         f"Old goal: {old['goal']}", "Old hints:", *[f"- {h}" for h in old["hints"]], "",
